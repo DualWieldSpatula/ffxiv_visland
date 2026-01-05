@@ -1,9 +1,12 @@
-{
-  "Author": "veyn, croizat",
-  "Name": "Visland",
-  "Punchline": "Automate island sanctuary activities",
-  "Description": "Automate gathering, workshop assignments, etc.",
-  "InternalName": "visland",
-  "ApplicableVersion": "any",
-  "IconUrl": "https://raw.githubusercontent.com/awgil/ffxiv_visland/d3338f6ddbf54365e60fbdf8e85ea8f5abdb745f/icon.png"
-}
+[
+  {
+    "Author": "DualWieldSpatula",
+    "Name": "visland (Spatula Fork)",
+    "InternalName": "visland",
+    "Description": "My personal fork of visland with custom fixes for Auto-Gathering.",
+    "RepoUrl": "https://github.com/DualWieldSpatula/ffxiv_visland",
+    "ApplicableVersion": "any",
+    "DownloadLinkInstall": "https://github.com/DualWieldSpatula/ffxiv_visland/releases/latest/download/latest.zip",
+    "IsHide": false
+  }
+]
