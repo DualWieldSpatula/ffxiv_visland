@@ -1,0 +1,12 @@
+[
+  {
+    "Author": "DualWieldSpatula",
+    "Name": "visland (Spatula Fork)",
+    "InternalName": "visland",
+    "Description": "Personal fork with fixes for the Gathering State lock bug.",
+    "RepoUrl": "https://github.com/DualWieldSpatula/ffxiv_visland",
+    "ApplicableVersion": "any",
+    "DownloadLinkInstall": "https://github.com/DualWieldSpatula/ffxiv_visland/releases/latest/download/latest.zip",
+    "IsHide": false
+  }
+]
