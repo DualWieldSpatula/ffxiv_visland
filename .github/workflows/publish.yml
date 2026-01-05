@@ -3,7 +3,9 @@ name: Build Plugin
 on:
   push:
     branches:
-      - master # The original visland uses 'master' instead of 'main'
+      - master
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -21,13 +23,22 @@ jobs:
         with:
           dotnet-version: 8.x
 
+      # This step downloads the necessary Dalamud files so the compiler knows what 'Lumina' and 'Dalamud' are
+      - name: Download Dalamud
+        run: |
+          Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -OutFile dalamud.zip
+          Expand-Archive -Path dalamud.zip -DestinationPath dalamud
+          echo "DALAMUD_HOME=$((Get-Item .).FullName)\dalamud" >> $env:GITHUB_ENV
+
+      - name: Restore Dependencies
+        run: dotnet restore visland.sln
+
       - name: Build Solution
-        run: dotnet build visland.sln --configuration Release
+        run: dotnet build visland.sln --configuration Release /p:DalamudLibPath="${{ env.DALAMUD_HOME }}"
 
       - name: Create Release Package
         shell: pwsh
         run: |
-          # Look in the 'visland' folder for the build output
           $binDir = "visland/bin/Release"
           if (Test-Path $binDir) {
               Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
