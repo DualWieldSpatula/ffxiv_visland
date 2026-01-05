@@ -3,12 +3,12 @@ name: Build Plugin
 on:
   push:
     branches:
-      - main  # Trigger on every save to the main branch
-  workflow_dispatch: # Allows you to run it manually from the "Actions" tab
+      - master # The original visland uses 'master' instead of 'main'
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-latest # Dalamud plugins must be built on Windows
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Code
@@ -19,17 +19,22 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.x # FFXIV plugins currently use .NET 8
+          dotnet-version: 8.x
 
       - name: Build Solution
-        run: dotnet build --configuration Release
+        run: dotnet build visland.sln --configuration Release
 
       - name: Create Release Package
         shell: pwsh
         run: |
-          # This finds your compiled DLL and zips it up with the manifest
-          $binDir = "src/bin/Release" # Adjust this path if your DLL is elsewhere
-          Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
+          # Look in the 'visland' folder for the build output
+          $binDir = "visland/bin/Release"
+          if (Test-Path $binDir) {
+              Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
+          } else {
+              Write-Error "Build output directory not found at $binDir"
+              exit 1
+          }
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -39,7 +44,7 @@ jobs:
 
       - name: Release to GitHub
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') # Only creates a "Release" if you add a tag
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: latest.zip
         env:
