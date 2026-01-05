@@ -1,17 +1,46 @@
+name: Build Plugin
+
 on:
   push:
-    tags:
-      - 'v*.*.*.*'
-
-permissions:
-  contents: read
+    branches:
+      - main  # Trigger on every save to the main branch
+  workflow_dispatch: # Allows you to run it manually from the "Actions" tab
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: windows-latest # Dalamud plugins must be built on Windows
+
     steps:
-      - name: Build and publish
-        uses: Jaksuhn/DynamisPublishAction@master
+      - name: Checkout Code
+        uses: actions/checkout@v4
         with:
-          plugin_id: '28'
-          publisher_key: ${{ secrets.PUBLISHER_KEY }}
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x # FFXIV plugins currently use .NET 8
+
+      - name: Build Solution
+        run: dotnet build --configuration Release
+
+      - name: Create Release Package
+        shell: pwsh
+        run: |
+          # This finds your compiled DLL and zips it up with the manifest
+          $binDir = "src/bin/Release" # Adjust this path if your DLL is elsewhere
+          Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: visland-latest
+          path: latest.zip
+
+      - name: Release to GitHub
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') # Only creates a "Release" if you add a tag
+        with:
+          files: latest.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
