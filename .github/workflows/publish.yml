@@ -16,8 +16,8 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          # This is the fix for error 128: 
-          # We removed 'submodules: recursive' because the submodule is gone.
+          # Disabling submodules prevents the fatal Exit Code 128 
+          # caused by broken links in your .gitmodules file.
           fetch-depth: 0 
 
       - name: Setup .NET
@@ -27,6 +27,7 @@ jobs:
 
       - name: Download Dalamud
         run: |
+          # Downloads the Dalamud distribution to satisfy Lumina and Dalamud references.
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -OutFile dalamud.zip
           Expand-Archive -Path dalamud.zip -DestinationPath dalamud
           $dalamudPath = "$((Get-Item .).FullName)\dalamud"
@@ -37,18 +38,18 @@ jobs:
 
       - name: Build Solution
         run: |
-          # We are only building the main plugin now that the .sln is cleaned
+          # Passes the downloaded library path to the compiler.
           dotnet build visland.sln --configuration Release -p:DalamudLibPath="${{ env.DALAMUD_HOME }}"
 
       - name: Create Release Package
         shell: pwsh
         run: |
-          # This path points to where the plugin's DLL is created
+          # Locates the compiled plugin and zips it for release.
           $binDir = "ffxiv_visland/bin/Release"
           if (Test-Path $binDir) {
               Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
           } else {
-              Write-Error "Build output directory not found at $binDir. Check your folder structure."
+              Write-Error "Build output directory not found at $binDir. Ensure your project folder name is correct."
               exit 1
           }
 
