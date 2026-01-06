@@ -122,7 +122,7 @@ public class GatherRouteExec : IDisposable
 
         CompatModule.EnsureCompatibility(RouteDB);
 
-        // --- IMPROVED LOGIC FIX: Check visibility to handle TaskManager timeouts ---
+        // --- SURGICAL LOGIC FIX ---
         bool isGatheringVisible = (GatheringAM != null && GatheringAM.Base->IsVisible) || (GatheringCollectableAM != null && GatheringCollectableAM.Base->IsVisible);
 
         if (RouteDB.AutoGather && isGatheringVisible && !Player.InGatheringAnimation)
@@ -135,10 +135,10 @@ public class GatherRouteExec : IDisposable
             return;
         }
 
-        // FAIL-SAFE: If the window is gone but we are still in "Gathering" state, abort stuck tasks.
+        // Only abort if the window is gone AND we were previously in the Gathering state.
         if (!isGatheringVisible && CurrentState == State.Gathering)
         {
-            PluginLog.Debug("Gathering window closed unexpectedly. Aborting stuck tasks to prevent state lock.");
+            PluginLog.Debug("Gathering finished. Surgical task abort triggered.");
             P.TaskManager.Abort(); 
             SetState(State.None); 
         }
