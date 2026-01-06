@@ -14,13 +14,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          # This tells GitHub to ignore the submodule index entirely
+          # This tells GitHub to ignore the broken submodule index entirely
           submodules: false
           
       - name: Force Git Clean
         run: |
           git config --global --add safe.directory "*"
-          # This manually removes the submodule from Git's "memory" during the build
+          # This ensures the submodule is removed from the build runner's index
           git rm -r --cached AutoRetainerAPI || true
         shell: bash
 
@@ -44,12 +44,13 @@ jobs:
       - name: Create Release Package
         shell: pwsh
         run: |
-          # Change 'ffxiv_visland' to just 'visland' if that is your folder name
-          $binDir = "ffxiv_visland/bin/Release"
+          # Path updated from 'ffxiv_visland' to 'visland' to match your repo structure
+          $binDir = "visland/bin/Release"
           if (Test-Path $binDir) {
               Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
+              Write-Host "Package created successfully."
           } else {
-              Write-Error "Build output directory not found. Check your folder name!"
+              Write-Error "Build output directory not found at $binDir. Check your folder structure."
               exit 1
           }
 
