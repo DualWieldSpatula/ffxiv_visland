@@ -1,13 +1,9 @@
-﻿using System;
+using System;
 using System.Linq;
-using AutoRetainerAPI;
 using Dalamud.IoC;
 using Dalamud.Plugin;
-using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Services;
-using ECommons.GameHelpers;
 using visland.Helpers;
-using visland.IPC;
 
 namespace visland;
 
@@ -32,7 +28,6 @@ public class Service
     public static T? LuminaRow<T>(uint row) where T : struct, Lumina.Excel.IExcelRow<T> => LuminaSheet<T>()?.GetRowOrDefault(row);
 
     public static Configuration Config = new();
-    public static Retainers Retainers = new();
 
     internal static bool IsInitialized = false;
     public static void Init(IDalamudPluginInterface pi)
@@ -49,123 +44,6 @@ public class Service
         catch (Exception ex)
         {
             Log.Error($"Error initalising {nameof(Service)}", ex);
-        }
-    }
-}
-
-public class Retainers
-{
-    public AutoRetainerApi API = null!;
-    public AutoRetainerIPC IPC = null!;
-    public Retainers()
-    {
-        API = new();
-        IPC = new();
-    }
-
-    public ulong StartingCharacter = 0;
-    public bool Finished
-    {
-        get
-        {
-            try
-            {
-                return IPC.GetMultiEnabled() && !IPC.IsBusy() && Player.CID == StartingCharacter && !HasRetainersReady && !HasSubsReady;
-            }
-            catch (IpcNotReadyError)
-            {
-                return false;
-            }
-        }
-    }
-
-    public ulong PreferredCharacter
-    {
-        get
-        {
-            try
-            {
-                return API.GetRegisteredCharacters().FirstOrDefault(c => API.GetOfflineCharacterData(c).Preferred);
-            }
-            catch (IpcNotReadyError)
-            {
-                return 0;
-            }
-        }
-    }
-
-    public bool HasRetainersReady
-    {
-        get
-        {
-            try
-            {
-                return API.GetRegisteredCharacters().Where(c => API.GetOfflineCharacterData(c).Enabled)
-                .Any(character => API.GetOfflineCharacterData(character).RetainerData.Any(x => x.HasVenture && x.VentureEndsAt <= DateTime.Now.ToUnixTimestamp()));
-            }
-            catch (IpcNotReadyError)
-            {
-                return false;
-            }
-        }
-    }
-
-    public bool HasSubsReady
-    {
-        get
-        {
-            try
-            {
-                return API.GetRegisteredCharacters().Where(c => API.GetOfflineCharacterData(c).Enabled)
-                .Any(c => API.GetOfflineCharacterData(c).OfflineSubmarineData.Any(x => API.GetOfflineCharacterData(c).EnabledSubs.Contains(x.Name) && x.ReturnTime <= DateTime.Now.ToUnixTimestamp()));
-            }
-            catch (IpcNotReadyError)
-            {
-                return false;
-            }
-        }
-    }
-
-    public uint NextReturn
-    {
-        get
-        {
-            try
-            {
-                return API.GetRegisteredCharacters().Where(c => API.GetOfflineCharacterData(c).Enabled).Min(c => API.GetOfflineCharacterData(c).OfflineSubmarineData.Min(x => x.ReturnTime));
-            }
-            catch (IpcNotReadyError)
-            {
-                return 0;
-            }
-        }
-    }
-
-    public ulong GetPreferredCharacter()
-    {
-        try
-        {
-            return API.GetRegisteredCharacters().FirstOrDefault(c => API.GetOfflineCharacterData(c).Preferred);
-        }
-        catch (IpcNotReadyError)
-        {
-            return 0;
-        }
-    }
-
-    private ulong TempCharacter = 0;
-    public void TempSwapPreferred(ulong cid, bool swapback)
-    {
-        if (swapback)
-        {
-            API.GetOfflineCharacterData(cid).Preferred = false;
-            API.GetOfflineCharacterData(TempCharacter).Preferred = true;
-        }
-        else
-        {
-            TempCharacter = PreferredCharacter;
-            API.GetOfflineCharacterData(PreferredCharacter).Preferred = false;
-            API.GetOfflineCharacterData(cid).Preferred = true;
         }
     }
 }
