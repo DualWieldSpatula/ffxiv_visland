@@ -490,4 +490,3 @@ public class GatherRouteExec : IDisposable
     }
     #endregion
 } // This closes the class
-} // This closes the namespace
