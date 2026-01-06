@@ -259,7 +259,8 @@ public class GatherRouteExec : IDisposable
                 var interactObj = !GenericHelpers.IsOccupied() ? FindObjectToInteractWith(wp) : null;
                 if (interactObj != null)
                 {
-                    if (!Player.IsOnIsland && RouteDB.AutoGather && Player.Gp < 700) return;
+                    // FIXED: Lowered GP requirement from 700 to 0 to prevent 30-second wait times.
+                    if (!Player.IsOnIsland && RouteDB.AutoGather && Player.Gp < 0) return;
                     _interact.Exec(() =>
                     {
                         SetState(State.Interacting);
