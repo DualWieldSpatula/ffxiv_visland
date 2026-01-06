@@ -122,10 +122,10 @@ public class GatherRouteExec : IDisposable
 
         CompatModule.EnsureCompatibility(RouteDB);
 
-        // LOGIC FIX: Added .IsVisible check to prevent state lock when nodes are exhausted
+        // LOGIC FIX: Check .IsVisible directly on the Base pointer to prevent state lock
         if (RouteDB.AutoGather && GatheringAM != null && GatheredItem != null && !Player.InGatheringAnimation)
         {
-            if (GatheringAM.Base->AtkUnitBase.IsVisible)
+            if (GatheringAM.Base->IsVisible)
             {
                 SetState(State.Gathering);
                 GatheringActions.UseNextBestAction(GatheringAM, GatheredItem);
@@ -135,7 +135,7 @@ public class GatherRouteExec : IDisposable
 
         if (RouteDB.AutoGather && GatheringCollectableAM != null && !Player.InGatheringAnimation)
         {
-            if (GatheringCollectableAM.Base->AtkUnitBase.IsVisible)
+            if (GatheringCollectableAM.Base->IsVisible)
             {
                 SetState(State.Gathering);
                 GatheringActions.UseNextBestAction(GatheringCollectableAM);
