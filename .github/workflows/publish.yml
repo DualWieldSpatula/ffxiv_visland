@@ -13,10 +13,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          # FORCE: Ignore the broken submodule index entirely
+          fetch-depth: 1
+          # This tells GitHub to ignore the submodule index entirely
           submodules: false
-          clean: true
+          
+      - name: Force Git Clean
+        run: |
+          git config --global --add safe.directory "*"
+          # This manually removes the submodule from Git's "memory" during the build
+          git rm -r --cached AutoRetainerAPI || true
+        shell: bash
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -38,13 +44,12 @@ jobs:
       - name: Create Release Package
         shell: pwsh
         run: |
-          # Verify this folder name matches your repo! 
-          # If the folder is just 'visland', change 'ffxiv_visland' to 'visland' below.
+          # Change 'ffxiv_visland' to just 'visland' if that is your folder name
           $binDir = "ffxiv_visland/bin/Release"
           if (Test-Path $binDir) {
               Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
           } else {
-              Write-Error "Build output directory not found at $binDir."
+              Write-Error "Build output directory not found. Check your folder name!"
               exit 1
           }
 
