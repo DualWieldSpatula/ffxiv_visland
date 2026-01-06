@@ -1,4 +1,4 @@
-name: Build Plugin
+name: Build and Publish
 
 on:
   push:
@@ -16,8 +16,9 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          fetch-depth: 0 # Pulls full history to avoid submodule issues
+          # This is the fix for error 128: 
+          # We removed 'submodules: recursive' because the submodule is gone.
+          fetch-depth: 0 
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -26,7 +27,6 @@ jobs:
 
       - name: Download Dalamud
         run: |
-          # Downloads the Dalamud distribution to satisfy Lumina/Dalamud references
           Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/stg/latest.zip -OutFile dalamud.zip
           Expand-Archive -Path dalamud.zip -DestinationPath dalamud
           $dalamudPath = "$((Get-Item .).FullName)\dalamud"
@@ -37,22 +37,18 @@ jobs:
 
       - name: Build Solution
         run: |
-          # The -p flags ensure all sub-projects (like AutoRetainerAPI) see the downloaded libraries
-          dotnet build visland.sln --configuration Release `
-          -p:DalamudLibPath="${{ env.DALAMUD_HOME }}" `
-          -p:ReferencesPath="${{ env.DALAMUD_HOME }}" `
-          -p:ReferencePath="${{ env.DALAMUD_HOME }}" `
-          -p:CommonLibPath="${{ env.DALAMUD_HOME }}"
+          # We are only building the main plugin now that the .sln is cleaned
+          dotnet build visland.sln --configuration Release -p:DalamudLibPath="${{ env.DALAMUD_HOME }}"
 
       - name: Create Release Package
         shell: pwsh
         run: |
-          # This points to the compiled visland output
-          $binDir = "visland/bin/Release"
+          # This path points to where the plugin's DLL is created
+          $binDir = "ffxiv_visland/bin/Release"
           if (Test-Path $binDir) {
               Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
           } else {
-              Write-Error "Build output directory not found at $binDir"
+              Write-Error "Build output directory not found at $binDir. Check your folder structure."
               exit 1
           }
 
