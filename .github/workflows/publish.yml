@@ -14,13 +14,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          # Hard override to ignore broken submodule links
           submodules: false
           
       - name: Force Git Clean
         run: |
           git config --global --add safe.directory "*"
-          # Remove any ghost references to AutoRetainer from the runner's index
           git rm -r --cached AutoRetainerAPI || true
         shell: bash
 
@@ -44,8 +42,11 @@ jobs:
       - name: Create Release Package
         shell: pwsh
         run: |
-          # DYNAMIC SEARCH: This finds the plugin DLL no matter which folder it is in
-          $dllFile = Get-ChildItem -Recurse -Filter "visland.dll" | Where-Object { $_.FullName -like "*bin\Release*" } | Select-Object -First 1
+          Write-Host "--- DEBUG: Listing all .dll files found after build ---"
+          Get-ChildItem -Recurse -Filter "*.dll" | Select-Object FullName
+          
+          # This search is now broader to catch any potential name variations
+          $dllFile = Get-ChildItem -Recurse -Filter "*.dll" | Where-Object { $_.FullName -like "*Release*" -and $_.Name -like "*visland*" } | Select-Object -First 1
           
           if ($dllFile) {
               $binDir = $dllFile.DirectoryName
@@ -53,7 +54,7 @@ jobs:
               Compress-Archive -Path "$binDir\*" -DestinationPath "latest.zip"
               Write-Host "Success! latest.zip created."
           } else {
-              Write-Error "Could not find visland.dll in any bin/Release folder. Build might have failed or folder structure is unexpected."
+              Write-Error "Could not find any visland DLL in a Release folder."
               exit 1
           }
 
