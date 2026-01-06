@@ -117,31 +117,34 @@ public class GatherRouteExec : IDisposable
         if (Paused && NavmeshIPC.IsRunning())
             NavmeshIPC.Stop();
 
-        if (!Player.Available || Player.Object!.IsCasting || Player.Mounting || Player.IsJumping || Paused || CurrentRoute == null || P.TaskManager.IsBusy || CurrentWaypoint >= CurrentRoute.Waypoints.Count)
+        if (!Player.Available || Player.Object!.IsCasting || Player.Mounting || Player.IsJumping || Paused || CurrentRoute == null || CurrentWaypoint >= CurrentRoute.Waypoints.Count)
             return;
 
         CompatModule.EnsureCompatibility(RouteDB);
 
-        // LOGIC FIX: Check .IsVisible directly on the Base pointer to prevent state lock
-        if (RouteDB.AutoGather && GatheringAM != null && GatheredItem != null && !Player.InGatheringAnimation)
+        // --- IMPROVED LOGIC FIX: Check visibility to handle TaskManager timeouts ---
+        bool isGatheringVisible = (GatheringAM != null && GatheringAM.Base->IsVisible) || (GatheringCollectableAM != null && GatheringCollectableAM.Base->IsVisible);
+
+        if (RouteDB.AutoGather && isGatheringVisible && !Player.InGatheringAnimation)
         {
-            if (GatheringAM.Base->IsVisible)
-            {
-                SetState(State.Gathering);
+            SetState(State.Gathering);
+            if (GatheringAM != null && GatheredItem != null)
                 GatheringActions.UseNextBestAction(GatheringAM, GatheredItem);
-                return;
-            }
+            else if (GatheringCollectableAM != null)
+                GatheringActions.UseNextBestAction(GatheringCollectableAM);
+            return;
         }
 
-        if (RouteDB.AutoGather && GatheringCollectableAM != null && !Player.InGatheringAnimation)
+        // FAIL-SAFE: If the window is gone but we are still in "Gathering" state, abort stuck tasks.
+        if (!isGatheringVisible && CurrentState == State.Gathering)
         {
-            if (GatheringCollectableAM.Base->IsVisible)
-            {
-                SetState(State.Gathering);
-                GatheringActions.UseNextBestAction(GatheringCollectableAM);
-                return;
-            }
+            PluginLog.Debug("Gathering window closed unexpectedly. Aborting stuck tasks to prevent state lock.");
+            P.TaskManager.Abort(); 
+            SetState(State.None); 
         }
+
+        if (P.TaskManager.IsBusy) return;
+        // --- END OF FIX ---
 
         if (GenericHelpers.IsOccupied()) return; 
 
@@ -489,4 +492,4 @@ public class GatherRouteExec : IDisposable
         }
     }
     #endregion
-} // This closes the class
+}
