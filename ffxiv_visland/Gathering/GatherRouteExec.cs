@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -59,7 +59,6 @@ public class GatherRouteExec : IDisposable
         PurifyingCollectables,
         RepairingGear,
         Waiting,
-        WaitingForAutoRetainer,
         AdjustingPosition,
     }
 
@@ -72,14 +71,10 @@ public class GatherRouteExec : IDisposable
     public GatherRouteExec()
     {
         RouteDB = Service.Config.Get<GatherRouteDB>();
-        //Svc.Chat.CheckMessageHandled += CheckToDisable;
-        //Svc.Toasts.ErrorToast += CheckToDisable;
     }
 
     public void Dispose()
     {
-        //Svc.Chat.CheckMessageHandled -= CheckToDisable;
-        //Svc.Toasts.ErrorToast -= CheckToDisable;
     }
 
     public void Start(GatherRouteDB.Route route, int waypoint, bool continueToNext, bool loopAtEnd, bool pathfind = false)
@@ -122,12 +117,6 @@ public class GatherRouteExec : IDisposable
         if (Paused && NavmeshIPC.IsRunning())
             NavmeshIPC.Stop();
 
-        if (Paused && RouteDB.AutoRetainerIntegration && Service.Retainers.Finished && Service.Retainers.GetPreferredCharacter() == Player.CID)
-        {
-            Service.Retainers.IPC.SetMultiEnabled(false);
-            Paused = false;
-        }
-
         if (!Player.Available || Player.Object!.IsCasting || Player.Mounting || Player.IsJumping || Paused || CurrentRoute == null || P.TaskManager.IsBusy || CurrentWaypoint >= CurrentRoute.Waypoints.Count)
             return;
 
@@ -154,7 +143,6 @@ public class GatherRouteExec : IDisposable
         var needToGetCloser = toWaypoint.LengthSquared() > wp.Radius * wp.Radius;
         Pathfind = wp.Pathfind;
 
-        // check if phantom waypoints have invalid interact data (i.e. from being added outside the object table distance)
         if (wp.IsPhantom && wp.InteractWithOID == 0)
         {
             var obj = Svc.Objects.FirstOrDefault(o => o?.ObjectKind == ObjectKind.GatheringPoint && o.IsTargetable && o?.Position.X - CurrentRoute.Waypoints[CurrentWaypoint].InteractWithPosition.X < 5 && o?.Position.Z - CurrentRoute.Waypoints[CurrentWaypoint].InteractWithPosition.Z < 5, null);
@@ -175,15 +163,6 @@ public class GatherRouteExec : IDisposable
             return;
         }
 
-        if (RouteDB.AutoRetainerIntegration && (Service.Retainers.HasSubsReady || Service.Retainers.HasRetainersReady) && Service.Retainers.GetPreferredCharacter() == Player.CID)
-        {
-            SetState(State.WaitingForAutoRetainer);
-            Paused = true;
-            Service.Retainers.StartingCharacter = Player.CID;
-            Service.Retainers.IPC.SetMultiEnabled(true);
-            return;
-        }
-
         if (RouteDB.TeleportBetweenZones && wp.ZoneID != default && Coordinates.HasAetheryteInZone((uint)wp.ZoneID) && Player.Territory.RowId != wp.ZoneID)
         {
             SetState(State.Teleporting);
@@ -196,7 +175,6 @@ public class GatherRouteExec : IDisposable
 
         if (wp.InteractWithOID != default && !Player.IsOnIsland && wp.IsNode && Player.Job != wp.NodeJob)
         {
-            // must be done before movement or nodes will be skipped
             SetState(State.JobSwapping);
             PluginLog.Debug($"Changing job to {wp.NodeJob}");
             P.TaskManager.Enqueue(() => Player.SwitchJob(wp.NodeJob));
@@ -205,7 +183,6 @@ public class GatherRouteExec : IDisposable
 
         if (needToGetCloser)
         {
-            // skip current waypoint if target isn't there
             if (wp.IsNode && Player.DistanceTo(wp.Position) < 50 && !Svc.Objects.Any(x => x.BaseId == wp.InteractWithOID && x.IsTargetable))
             {
                 PluginLog.Debug("Current waypoint target is not targetable, moving to next waypoint");
@@ -224,294 +201,4 @@ public class GatherRouteExec : IDisposable
 
             Player.Sprint();
 
-            if (wp.Movement == GatherRouteDB.Movement.MountFly && Player.Mounted && !Player.InclusiveFlying)
-            {
-                // TODO: improve, jump is not the best really...
-                SetState(State.Jumping);
-                Player.Jump();
-                return;
-            }
-
-            if (Pathfind && NavmeshIPC.IsEnabled)
-            {
-                if (!NavmeshIPC.IsReady() || NavmeshIPC.PathfindInProgress()) { SetState(State.WaitingForNavmesh); return; }
-                SetState(State.Moving);
-                NavmeshIPC.PathfindAndMoveTo(wp.Position, wp.Movement == GatherRouteDB.Movement.MountFly || Player.InclusiveFlying);
-            }
-            else
-            {
-                SetState(State.Moving);
-                _movement.DesiredPosition = wp.Position;
-                _camera.SpeedH = _camera.SpeedV = 360.Degrees();
-                _camera.DesiredAzimuth = Angle.FromDirection(toWaypoint.X, toWaypoint.Z) + 180.Degrees();
-            }
-
-            return;
-        }
-
-        // force stop at destination to avoid a bug wherein you interact with the object and keep moving for a period of time
-        if (Pathfind && NavmeshIPC.IsRunning())
-            NavmeshIPC.Stop();
-
-        if (!Player.Normal && wp.Movement == GatherRouteDB.Movement.Normal)
-        {
-            SetState(State.Dismounting);
-            Player.Dismount();
-            return;
-        }
-
-        if (Player.ExclusiveFlying && wp.Movement == GatherRouteDB.Movement.MountNoFly)
-        {
-            SetState(State.AdjustingPosition);
-            _movement.DesiredPosition = new Vector3(Player.Position.X, wp.Position.Y, Player.Position.Z);
-            PluginLog.Verbose($"Waypoint is MountNoFly, currently flying. Setting desired position lower.");
-            return;
-        }
-
-        switch (wp.Interaction)
-        {
-            case GatherRouteDB.InteractionType.Standard:
-                var interactObj = !GenericHelpers.IsOccupied() ? FindObjectToInteractWith(wp) : null;
-                if (interactObj != null)
-                {
-                    if (!Player.IsOnIsland && RouteDB.AutoGather && Player.Gp < 700) return;
-                    _interact.Exec(() =>
-                    {
-                        SetState(State.Interacting);
-                        Service.Log.Debug("Interacting...");
-                        TargetSystem.Instance()->OpenObjectInteraction(interactObj);
-                    });
-                    return;
-                }
-                break;
-            case GatherRouteDB.InteractionType.StartRoute:
-                var route = RouteDB.Routes.Find(r => r.Name == wp.RouteName);
-                if (route != null)
-                {
-                    Finish();
-                    Start(route, 0, true, false, route.Waypoints[0].Pathfind);
-                    return;
-                }
-                break;
-            case GatherRouteDB.InteractionType.NodeScan:
-                var objs = Svc.Objects.Where(o => o?.ObjectKind == ObjectKind.GatheringPoint && o.IsTargetable).OrderBy(x => x.BaseId);
-                if (objs.Any())
-                {
-                    PluginLog.Debug($"Found {objs.Count()} GatheringPoints");
-                    TryAddObjects(wp, objs);
-                }
-                else
-                {
-                    var markers = GetGatheringMarkers();
-                    if (markers.Count == 0) { Player.RevealNode(); return; }
-                    TryAddMarkers(wp, markers);
-                }
-                if (!wp.IsLast(CurrentRoute))
-                {
-                    ++CurrentWaypoint;
-                    return;
-                }
-                break;
-        }
-
-        if (P.TaskManager.IsBusy) return; // let interactions play out
-
-        if (RouteDB.ExtractMateria && SpiritbondManager.IsSpiritbondReadyAny() && !GenericHelpers.IsOccupied() && !Svc.Condition[ConditionFlag.Mounted])
-        {
-            SetState(State.ExtractingMateria);
-            PluginLog.Debug("Extract materia task queued.");
-            P.TaskManager.Enqueue(() => SpiritbondManager.ExtractMateriaTask(), "ExtractMateria");
-            return;
-        }
-
-        if (RouteDB.RepairGear && RepairManager.CanRepairAny(RouteDB.RepairPercent) && !GenericHelpers.IsOccupied() && !Svc.Condition[ConditionFlag.Mounted])
-        {
-            SetState(State.RepairingGear);
-            PluginLog.Debug("Repair gear task queued.");
-            P.TaskManager.Enqueue(() => RepairManager.ProcessRepair(), "RepairGear");
-            return;
-        }
-
-        if (RouteDB.PurifyCollectables && PurificationManager.CanPurifyAny() && !GenericHelpers.IsOccupied() && !Svc.Condition[ConditionFlag.Mounted])
-        {
-            SetState(State.PurifyingCollectables);
-            PluginLog.Debug("Purify collectables task queued.");
-            P.TaskManager.Enqueue(() => PurificationManager.PurifyAllTask(), "PurifyCollectables");
-            return;
-        }
-
-        //if (Player.BestCordial.Id != 0 && Player.BestCordial.GP + Player.Gp <= Player.MaxGp)
-        //{
-        //    Player.DrinkCordial();
-        //    return;
-        //}
-
-        next:
-        if (!ContinueToNext)
-        {
-            Finish();
-            return;
-        }
-
-        Errors.Clear(); // Resets errors between points in case gathering is still valid but just unable to gather all items from a node (e.g maxed out on stone, but not quartz)
-
-        if (wp.WaitTimeET != default && wp.WaitTimeET != (Utils.EorzeanHour(), Utils.EorzeanMinute()).ToVec2()) return;
-
-        if (!Waiting && wp.WaitTimeMs != default)
-        {
-            WaitUntil = Environment.TickCount64 + wp.WaitTimeMs;
-            Waiting = true;
-            SetState(State.Waiting);
-        }
-
-        if (Waiting && Environment.TickCount64 <= WaitUntil) return;
-
-        if (wp.WaitForCondition != default && !Svc.Condition[wp.WaitForCondition]) return;
-
-        Waiting = false;
-
-        if (wp.IsPhantom && wp.IsLast(CurrentRoute)) // phantom nodes should have two interactions: standard and nodescan. Ideally find a better way than just duplicating the function here
-        {
-            var objs = Svc.Objects.Where(o => o?.ObjectKind == ObjectKind.GatheringPoint && o.IsTargetable).OrderBy(x => x.BaseId);
-            if (objs.Any())
-            {
-                PluginLog.Debug($"Found {objs.Count()} GatheringPoints");
-                TryAddObjects(wp, objs);
-            }
-            else
-            {
-                var markers = GetGatheringMarkers();
-                if (markers.Count == 0) { Player.RevealNode(); return; }
-                TryAddMarkers(wp, markers);
-            }
-            if (!wp.IsLast(CurrentRoute))
-            {
-                // we don't want phantom waypoints to continue as normal or else it would reset the route
-                ++CurrentWaypoint;
-                return;
-            }
-        }
-
-        if (++CurrentWaypoint >= CurrentRoute!.Waypoints.Count)
-        {
-            if (Loop)
-            {
-                CurrentRoute.Waypoints.RemoveAll(x => x.IsPhantom);
-                CurrentWaypoint = 0;
-            }
-            else
-                Finish();
-        }
-    }
-
-    private bool NodeExists(Vector3 nodePos)
-    {
-        if (Vector3.DistanceSquared(Player.Position, nodePos) < 100)
-            if (Svc.Objects.FirstOrDefault(x => x?.Position == nodePos, null) != null)
-                return true;
-        return false;
-    }
-
-    private void SetState(State state)
-    {
-        if (state != CurrentState)
-        {
-            CurrentState = state;
-            PluginLog.Information($"State: {CurrentState}");
-        }
-    }
-
-    #region Interactions
-    private unsafe GameObject* FindObjectToInteractWith(GatherRouteDB.Waypoint wp)
-    {
-        if (wp.InteractWithOID == 0)
-            return null;
-
-        foreach (var obj in Service.ObjectTable.Where(o => o.BaseId == wp.InteractWithOID && (o.Position - wp.Position).LengthSquared() < 1))
-            return obj.IsTargetable ? (GameObject*)obj.Address : null;
-        return null;
-    }
-
-    private void TryAddObjects(GatherRouteDB.Waypoint wp, IEnumerable<IGameObject> nodes)
-    {
-        List<GatherRouteDB.Waypoint>? waypoints = [];
-        waypoints = nodes.Select(obj => new GatherRouteDB.Waypoint
-        {
-            IsPhantom = true,
-            Position = Svc.Condition[ConditionFlag.Diving] ? obj.Position : NavmeshIPC.QueryMeshPointOnFloor(obj.Position, false, 5) ?? obj.Position,
-            ZoneID = Svc.ClientState.TerritoryType,
-            Radius = RouteDB.DefaultWaypointRadius,
-            InteractWithName = obj.Name.TextValue,
-            InteractWithOID = obj.BaseId,
-            InteractWithPosition = obj.Position,
-            Interaction = GatherRouteDB.InteractionType.Standard,
-            Movement = Player.InclusiveFlying ? GatherRouteDB.Movement.MountFly : GatherRouteDB.Movement.Normal
-        }).ToList();
-
-        if (waypoints.Count > 0)
-            wp.AddWaypointsAfter(CurrentRoute!, waypoints);
-    }
-
-    private void TryAddMarkers(GatherRouteDB.Waypoint wp, List<(MiniMapGatheringMarker Marker, Vector3 Position, float DistanceToLast, IGameObject? Node)> markers)
-    {
-        List<GatherRouteDB.Waypoint>? waypoints = [];
-        waypoints = markers.Select(marker => new GatherRouteDB.Waypoint
-        {
-            IsPhantom = true,
-            Position = Svc.Condition[ConditionFlag.Diving] ? marker.Position : NavmeshIPC.QueryMeshPointOnFloor(marker.Position, false, 5) ?? marker.Position,
-            ZoneID = Svc.ClientState.TerritoryType,
-            Radius = RouteDB.DefaultWaypointRadius,
-            InteractWithName = marker.Node?.Name.TextValue ?? "",
-            InteractWithOID = marker.Node?.BaseId ?? 0,
-            InteractWithPosition = marker.Node?.Position ?? marker.Position,
-            Interaction = GatherRouteDB.InteractionType.Standard,
-            Movement = Svc.Condition[ConditionFlag.Diving] || marker.DistanceToLast > 30 ? GatherRouteDB.Movement.MountFly : GatherRouteDB.Movement.Normal
-        }).OrderBy(x => Vector3.Distance(Player.Position, x.Position)).ToList();
-
-        if (waypoints.Count > 0)
-            wp.AddWaypointsAfter(CurrentRoute!, waypoints);
-    }
-
-    private unsafe List<(MiniMapGatheringMarker Marker, Vector3 Position, float DistanceToLast, IGameObject? Node)> GetGatheringMarkers()
-        => AgentMap.Instance()->MiniMapGatheringMarkers.ToArray()
-            .Where(x => x.MapMarker.IconId != 0)
-            .Select((marker, index) =>
-            {
-                var pos = new Vector3(marker.MapMarker.X / 16, Player.Position.Y, marker.MapMarker.Y / 16);
-                var dist = index > 0 ? Vector3.Distance(Svc.Objects.ElementAt(index - 1).Position, pos) : 0;
-                var obj = Svc.Objects.FirstOrDefault(o => o?.ObjectKind == ObjectKind.GatheringPoint && o.IsTargetable && o?.Position.X - CurrentRoute!.Waypoints[CurrentWaypoint].InteractWithPosition.X < 5 && o?.Position.Z - CurrentRoute.Waypoints[CurrentWaypoint].InteractWithPosition.Z < 5, null);
-                PluginLog.Debug($"Found {nameof(MiniMapGatheringMarker)} @ {pos} {(obj != null ? $"and matching object [{obj.BaseId}] {obj.Name.TextValue} @ {obj.Position}" : string.Empty)}");
-                return (Marker: marker, Position: obj != null ? obj.Position : pos, DistanceToLast: dist, Node: obj);
-            }).ToList();
-    #endregion
-
-    #region Error Checking
-    private void CheckToDisable(ref SeString message, ref bool isHandled)
-    {
-        if (!RouteDB.DisableOnErrors) return;
-        PluginLog.Verbose($"ErrorToast fired with string: {message}");
-        Errors.PushBack(Environment.TickCount64);
-        if (Errors.Count() >= 5 && Errors.All(x => x > Environment.TickCount64 - 30 * 1000)) // 5 errors within 30 seconds stops the route, can adjust this as necessary
-        {
-            PluginLog.Debug("Toast error threshold reached. Stopping route.");
-            Finish();
-        }
-    }
-
-    private static readonly uint[] logErrors = [3570, 3574, 3575, 3584, 3589]; // various unable to spearfish errors
-    private void CheckToDisable(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
-    {
-        if (!RouteDB.DisableOnErrors || type != XivChatType.ErrorMessage) return;
-
-        PluginLog.Verbose($"ErrorMessage fired with string: {message}");
-        var msg = message.GetText();
-        if (logErrors.Any(x => msg == GetRow<LogMessage>(x)!.Value.Text.ExtractText()))
-            Errors.PushBack(Environment.TickCount64);
-        if (Errors.Count() >= 5 && Errors.All(x => x > Environment.TickCount64 - 30 * 1000)) // 5 errors within 30 seconds stops the route, can adjust this as necessary
-        {
-            PluginLog.Debug("Chat error threshold reached. Stopping route.");
-            Finish();
-        }
-    }
-    #endregion
-}
+            if (wp.Movement == GatherRouteDB.Movement.MountFly && Player.Mounted && !
