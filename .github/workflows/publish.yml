@@ -14,13 +14,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          # This tells GitHub to ignore the broken submodule index entirely
+          # Hard override to ignore broken submodule links
           submodules: false
           
       - name: Force Git Clean
         run: |
           git config --global --add safe.directory "*"
-          # This ensures the submodule is removed from the build runner's index
+          # Remove any ghost references to AutoRetainer from the runner's index
           git rm -r --cached AutoRetainerAPI || true
         shell: bash
 
@@ -44,13 +44,16 @@ jobs:
       - name: Create Release Package
         shell: pwsh
         run: |
-          # Path updated from 'ffxiv_visland' to 'visland' to match your repo structure
-          $binDir = "visland/bin/Release"
-          if (Test-Path $binDir) {
-              Compress-Archive -Path "$binDir/*" -DestinationPath "latest.zip"
-              Write-Host "Package created successfully."
+          # DYNAMIC SEARCH: This finds the plugin DLL no matter which folder it is in
+          $dllFile = Get-ChildItem -Recurse -Filter "visland.dll" | Where-Object { $_.FullName -like "*bin\Release*" } | Select-Object -First 1
+          
+          if ($dllFile) {
+              $binDir = $dllFile.DirectoryName
+              Write-Host "Found build output at: $binDir"
+              Compress-Archive -Path "$binDir\*" -DestinationPath "latest.zip"
+              Write-Host "Success! latest.zip created."
           } else {
-              Write-Error "Build output directory not found at $binDir. Check your folder structure."
+              Write-Error "Could not find visland.dll in any bin/Release folder. Build might have failed or folder structure is unexpected."
               exit 1
           }
 
